@@ -4,7 +4,8 @@
 
 **Evidence base — read these first:**
 - `00-findings.md` — what your live Xero org actually contains
-- `02-source-files.md` — full analysis of the real customer files you sent, plus the master price lists found in Drive
+- `02-source-files.md` — full analysis of the real customer files you sent
+- `03-master-price-list.md` — the product master (Master Price List 4.0), its per-customer alias columns, and how the app uses it
 - `profiles/courts.yaml`, `profiles/shell.yaml` — working profiles built from them
 
 This plan refers to both constantly. Where it says (F3) or (§A4) it means a
@@ -423,17 +424,25 @@ late. Every row in the file is accounted for as `invoiced`, `excluded (with
 reason)`, or `blocking`. The three always sum to the file's row count, and the
 app asserts it.
 
-### Even COURTS needs the alias table — 41% of it
+### Even COURTS needs the alias table — and the alias table already exists
 
-I assumed COURTS' `Model` column was our SKU. Running the prototype against the
-real Drive master (§D3) says otherwise: **15 of 34 values are nicknames** —
-`KYRO`, `POPCON`, `PORTASTOOL`, `MOMO FAUX FUR`, `MATTE 13L SINGLE TIER` — worth
-$464.24 of the $1,127.72 file. A "match on Model" implementation would have
-silently invoiced 59% and dropped the rest.
+I assumed COURTS' `Model` column was our SKU. It is for 24 of 36 articles. The
+other 12 are COURTS' *nicknames* — `KYRO`, `POPCON`, `PORTASTOOL`, `MOMO FAUX
+FUR` — plus three SKUs (`CM-20/28/38`) newer than the master. Together they are
+**$390.24 of the $1,127.72 file (35%)**. A "match on Model" implementation would
+have silently invoiced the rest and dropped these.
 
-The fix is already in the ladder: COURTS' own `Item No_` (`IP201479`) is stable
-and unique, so the alias is keyed on it (tier 2), and `Model` becomes a hint
-that speeds up the one-time confirmation. Fifteen aliases, once.
+The good news came from the master itself: **Master Price List 4.0 carries a
+`COURTS SKU` column** (914 rows populated) holding COURTS' own `IP…` article
+codes — and matching `Item No_` against it resolves the `MATTE` and `NORD`
+nicknames instantly (`docs/03-master-price-list.md §3`). The same file has
+`NTUC SKU`, `GIANT SKU`, `Yue Hwa SKU`, `BHG SKU`, `Sheng Siong SKU`,
+`Gain City SKU`, `Watsons PLU`. **That is the `ProductAlias` table, already
+maintained by your team.** The app reads it; it does not build a rival.
+
+So the one-time COURTS work is: fill about ten `COURTS SKU` cells in the master
+(the KYRO/POPCON/PORTASTOOL/KRUSTY/MOMO rows) and add `CM-20/28/38` as SKUs.
+Done in the file you already maintain, and every future month inherits it.
 
 ### The name-only case (Shell) is the hard one
 
@@ -636,17 +645,18 @@ outlet openings, the month someone merges cells). Raw and unedited — send the
 ugly ones especially.
 
 **2. Product master export**
-🟡 **Partly found.** Two masters in Drive, both read in full (§D): `Master Price
-List - For Ravi.xlsx` (Jun 2024, 2,127 active SKUs, has BRAND + barcode + cost
-tiers) and `GoLabel Master Database 2025 (Updated).xlsx` (Jan 2026, 1,431 SKUs,
-has Brand + barcode + RSP). Neither has `CM-20/28/38`. **Still needed:** whichever
-list is current for 2026 SKUs — or confirmation that Xero Items is the source
-of truth and the app should union Drive + Xero.
-→ *Brand is the field that routes AGPL vs SGPL. Both masters have it.*
+✅ **Received: `Master Price List 4.0 - 2025 R1.xlsm`** (Drive
+`1kfa_KvpN8klUX1HhbIFZFTXpFN4N5V_D`, modified 2026-09-04). 3,810 SKUs, `BRAND`,
+`STATUS`, `BARCODE`, and per-customer alias + cost columns. Fully documented in
+`03-master-price-list.md`. Two gaps to close in the file itself: `CM-20/28/38`
+are missing, and 25 rows have a blank brand (unroutable).
+→ *Brand routes AGPL vs SGPL; the per-customer SKU columns are the alias table.*
 
 **3. Price lists per customer**
-The agreed net price per SKU per customer, **with effective dates**. If prices
-differ per outlet, say so.
+🟡 **Partly in the master.** `COURTS Cost (30-35%）` 220 rows, `BHG COST (35%)`
+326, `GIANT COST` 115, `Sheng Siong COST` 6 — but `NTUC COST` and `Yue Hwa COST`
+are **empty**. For NTUC (itemised, price from us) that is a real gap. Also
+needed: effective dates — the master holds one current price per cell.
 → *For itemised customers, this — not the file — sets the invoice price.*
 
 **4. Commission / margin terms per customer**
@@ -768,16 +778,21 @@ The two files answered several of my original questions and raised sharper ones.
    customer's vendor code. Rule adopted: when a brand is in doubt, look it up in
    the Drive master price list (§D).
 
-### New blocker surfaced by the master list
+### Formerly blocking — resolved
 
-3b. **Which product master is current?** The two in Drive are Jun 2024 and Jan
-    2026 and neither has `CM-20/28/38` (§D2). Is Xero Items the source of truth
-    for new SKUs, or is there a newer list?
+3b. ✅ **Which product master is current?** `Master Price List 4.0 - 2025 R1.xlsm`
+    (Brien, 2026-09-06). `CM-20/28/38` are simply not in it yet — to be added.
 
 ### Needed before the COURTS pilot goes live
 
-4. **Fifteen COURTS aliases** (§D3) — `KYRO`, `POPCON`, `MATTE 13L SINGLE
-   TIER`… → our SKU. I can pre-fill likely matches from the master; you confirm.
+4. **Ten `COURTS SKU` cells + three new SKUs in the master** (§3 of
+   `03-master-price-list.md`): fill `IP201581/82/84` (KYRO colours), `IP209537`
+   (POPCON), `IP201484` (PORTASTOOL), `IP198842` (KRUSTY), `IP215623/25` (MOMO)
+   against their `CS-3311-*`, `MS-2631-*`, `CS-3210/11-*`, `LN-5373`, `LS-9579-*`
+   rows; add `CM-20/28/38`. Tell me how `ROADSHOW SPECIAL BUY $20` and
+   `MEGASTORE WAREHOUSE SALES` should be invoiced — they are event lines, not SKUs.
+4b. **`IP138548` / `LN-5182-BEIGE`:** master says COURTS cost 10.27, the file says
+   10.67. Which is right?
 4a. **Store code → Xero contact** for the 12 COURTS codes, and **which "Courts
    Tampines" contact is correct** — `368f74f9…` or `b32222af…`? Both were
    invoiced in July 2026 (F5). Shall I generate the full duplicate report across
@@ -835,7 +850,8 @@ impossible, and none of them is the kind a careful person catches reliably at
 
 **The first move is narrow and concrete: COURTS, draft-only, four weeks.** I
 already know the expected answer — $1,127.72 net, $101.51 GST, 13 invoices
-across two organisations. The three blocking questions are answered. Give me the
-15 COURTS aliases, the store mapping, and the July file, and the pilot either
-reproduces your July invoices to the cent or it doesn't. That is proof
+across two organisations. The three blocking questions are answered and the product
+master is in hand. Fill the ten `COURTS SKU` cells, give me the store mapping
+and the July file, and the pilot either reproduces your July invoices to the
+cent or it doesn't. That is proof
 rather than promises, and everything after it is repetition.

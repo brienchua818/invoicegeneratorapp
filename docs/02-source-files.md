@@ -334,6 +334,11 @@ run-time stays deterministic.
 
 ## File D — the master price lists in Google Drive
 
+> **Superseded on the same day.** Brien then supplied the current master,
+> `Master Price List 4.0 - 2025 R1.xlsm` (modified 2026-09-04). It is documented
+> in full in `03-master-price-list.md` and replaces both lists below. The
+> analysis here is kept because it is what exposed the nickname problem (§D3).
+
 Brien's instruction: *"when in doubt, look for the master pricelist in the shared
 drive."* I did. Two candidates, both read in full via the Drive connector.
 
@@ -440,3 +445,5 @@ the alias simply points at the pack SKU.
 | D2: no single current master | Product table = Drive master ∪ Xero Items, refreshed on schedule. |
 | D3: COURTS `Model` is a nickname 44% of the time | Alias key for COURTS is `Item No_`, not `Model`. ~15 aliases to confirm once. |
 | D4: pack SKUs exist | `Pack of N` resolves to a pack SKU (`LS-9631*8`), not a multiplier. |
+| **Master 4.0** has per-customer SKU columns | **The alias table already exists** in the master; unresolved articles are fixed by filling a cell there. See `03-master-price-list.md`. |
+| Master 4.0 resolves 24 of 36 COURTS articles | 12 remain (KYRO ×3, POPCON, PORTASTOOL, KRUSTY, MOMO ×2, CM-20/28/38, two promo lines) — $390.24, 35% of the file. |
