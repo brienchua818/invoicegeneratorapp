@@ -25,8 +25,10 @@ gst:
     amount: inclusive             # §B3 — SG shelf prices. Declared, then challenged.
 
 commission:
-  mode: from_agreement            # NOT in the file. Must come from the Shell contract.
-  rate: null                      # ← BLOCKS GO-LIVE until supplied (see plan Q4)
+  mode: from_agreement            # NOT in the file — comes from the agreement
+  rate: 0.30                      # confirmed by Brien, 2026-09-06
+  effective_from: 2026-08-01      # editable in the app's Commission & Terms tab
+  applies_to: retail_ex_gst
 
 proofs:
   internal_consistency: false     # only one money column — nothing to cross-check

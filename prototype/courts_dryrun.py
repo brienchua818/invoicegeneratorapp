@@ -4,7 +4,12 @@ Not the app. It exists to prove the plan's arithmetic on a real file before
 anyone writes the real thing. No Xero calls; prints what it would post.
 
     pip install openpyxl
-    python prototype/courts_dryrun.py <ConsignmentPO*.xlsx>
+    python prototype/courts_dryrun.py <ConsignmentPO*.xlsx> [master_price_list.xlsx]
+
+If the master price list is given, each SKU is routed to its Xero entity by
+the master's BRAND column (Table Matters -> AGPL, everything else -> SGPL) and
+one invoice is produced per (entity, store). Without it, SKUs are not routed
+and a single entity is assumed. The master is never committed to this repo.
 """
 import sys
 from collections import defaultdict
@@ -17,6 +22,32 @@ from gst import line_exclusive, invoice_totals, rate_for, r2
 
 EXPECTED_COMMISSION_TIERS = (Decimal("0.30"), Decimal("0.35"))
 TIER_TOLERANCE = Decimal("0.002")
+AGPL_BRANDS = {"TABLE MATTERS"}
+
+
+def load_brand_map(path):
+    """SKU -> BRAND from the master price list (both active and discontinued)."""
+    wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
+    out = {}
+    for ws in wb.worksheets:
+        rows = ws.iter_rows(values_only=True)
+        hdr = [str(h).strip().upper() if h else "" for h in next(rows)]
+        if "SKU" not in hdr or "BRAND" not in hdr:
+            continue
+        si, bi = hdr.index("SKU"), hdr.index("BRAND")
+        for r in rows:
+            if r[si] and r[bi]:
+                out[str(r[si]).strip().upper()] = str(r[bi]).strip().upper()
+    return out
+
+
+def entity_for(model, brand_map):
+    if brand_map is None:
+        return "SGPL"
+    brand = brand_map.get(str(model).strip().upper())
+    if brand is None:
+        return "UNMAPPED"          # the real app hard-stops here
+    return "AGPL" if brand in AGPL_BRANDS else "SGPL"
 
 
 def load(path):
@@ -29,15 +60,20 @@ def load(path):
             and r["Invoiced Quantity"]]
 
 
-def main(path):
+def main(path, master=None):
     rows = load(path)
     rate = rate_for(date(2026, 8, 31))
+    brand_map = load_brand_map(master) if master else None
     stores = defaultdict(lambda: defaultdict(lambda: [Decimal(0), Decimal(0), None]))
     ar = {}
     warnings = []
 
     for row in rows:
-        store = str(row["Location Code"])
+        entity = entity_for(row["Model"], brand_map)
+        if entity == "UNMAPPED":
+            warnings.append(f"{row['Model']}: not in master price list -> "
+                            f"cannot route to an entity")
+        store = (entity, str(row["Location Code"]))
         ar.setdefault(store, set()).add(row["PONUMBER"])
         qty = Decimal(str(row["Invoiced Quantity"]))
         cost = Decimal(str(row["CostPrice"]))
@@ -56,20 +92,25 @@ def main(path):
         bucket[1] += qty * cost
         bucket[2] = row["Description"]
 
-    grand = {"net": Decimal(0), "tax": Decimal(0), "total": Decimal(0)}
-    for store in sorted(stores):
-        refs = ar[store]
+    grand = defaultdict(lambda: {"net": Decimal(0), "tax": Decimal(0),
+                                 "total": Decimal(0), "n": 0})
+    for (entity, store) in sorted(stores):
+        refs = ar[(entity, store)]
         assert len(refs) == 1, f"store {store} has multiple AR numbers: {refs}"
         ref = refs.pop()
-        lines = [line_exclusive(v[1], rate) for v in stores[store].values()]
+        lines = [line_exclusive(v[1], rate)
+                 for v in stores[(entity, store)].values()]
         t = invoice_totals(lines)
-        print(f"store {store}  {ref}  {len(stores[store]):2} lines   "
+        print(f"{entity}  store {store}  {ref}  {len(lines):2} lines   "
               f"net {t['net']:>9}  GST {t['tax']:>7}  total {t['total']:>9}")
-        for k in grand:
-            grand[k] += t[k]
+        for k in t:
+            grand[entity][k] += t[k]
+        grand[entity]["n"] += 1
 
-    print(f"\n{len(stores)} invoices   net {grand['net']}   "
-          f"GST {grand['tax']}   total {grand['total']}")
+    print()
+    for entity, g in sorted(grand.items()):
+        print(f"{entity}: {g['n']} invoices   net {g['net']}   "
+              f"GST {g['tax']}   total {g['total']}")
     print(f"rows in: {len(rows)}   rows invoiced: "
           f"{sum(len(v) for v in stores.values())} aggregated lines")
     for w in sorted(set(warnings)):
@@ -77,4 +118,4 @@ def main(path):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    main(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None)

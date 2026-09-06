@@ -4,7 +4,8 @@
 customer_key: courts
 display_name: COURTS (Singapore) Pte Ltd
 status: active
-entity_routing: by_brand          # see plan §4
+entity_routing: by_brand          # see plan §4 — file DOES span entities (§D1):
+                                  # store 928 carries KD10998 + CM-20/28/38 (Table Matters → AGPL)
 
 source:
   format: xlsx
@@ -70,7 +71,10 @@ proofs:
   historical_price_challenge: true # Proof 3 — cost price vs last batch, per SKU
 
 resolution:
-  sku_match_order: [our_sku_exact, customer_sku_alias, description_normalised]
+  # §D3: 'Model' is our SKU for ~56% of lines and a COURTS nickname for the rest
+  # (KYRO, POPCON, MATTE 13L SINGLE TIER…). 'Item No_' (IPxxxxxx) is stable, so
+  # the alias table is keyed on it and 'Model' is only a hint / first-time helper.
+  sku_match_order: [customer_sku_alias, our_sku_exact, description_normalised]
   outlet_match:
     method: code_lookup           # 'Location Code' -> ContactLink, never fuzzy
     require_explicit_mapping: true

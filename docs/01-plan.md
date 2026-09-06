@@ -4,7 +4,7 @@
 
 **Evidence base — read these first:**
 - `00-findings.md` — what your live Xero org actually contains
-- `02-source-files.md` — full analysis of the two real customer files you sent
+- `02-source-files.md` — full analysis of the real customer files you sent, plus the master price lists found in Drive
 - `profiles/courts.yaml`, `profiles/shell.yaml` — working profiles built from them
 
 This plan refers to both constantly. Where it says (F3) or (§A4) it means a
@@ -175,11 +175,12 @@ Confirmed twice over: SI26060070 (one NTUC JEM invoice) already mixes **Houze**
 and **Greenshield** — both SGPL, so it stays one invoice. The Shell file mixes
 **Houze** and **Table Matters** — different entities, so it must split.
 
-⚠️ **One thing to check (Q12):** the COURTS file carries `Vendor No_ = SHG` on
-all 159 rows, yet includes `KD10998` (a Kakudo rice bowl) and `CM-20/28/38` —
-which look like Table Matters lines. If COURTS buys Table Matters product under
-the *Sheldon* vendor code, then brand-routing and COURTS' own vendor code
-disagree, and I need you to tell me which one wins.
+✅ **Resolved:** the COURTS file carries `Vendor No_ = SHG` on all 159 rows, yet
+includes `KD10998` (Kakudo rice bowl) and `CM-20/28/38`. Brien confirmed these
+are Table Matters, and the Drive master agrees for KD10998 (§D1). **Brand wins
+over the customer's vendor code.** So the August COURTS file splits: store 928
+produces an SGPL invoice *and* an AGPL invoice (net $99.30) referencing the same
+AR number.
 
 **Edge case to decide (open question Q3):** if an outlet has $0 of AGPL
 product in a month, we post one invoice, not an empty second one.
@@ -369,11 +370,15 @@ style A is a one-line change plus a parallel-run month — not a rewrite.
 12 invoices, one per store, referenced by the AR number read from the file:
 
 ```
-store 870  AR0116471   36 rows -> 9 SKU lines (incl. 3 returns)
-           net 102.20   GST 9.20   total 111.40
+SGPL  store 870  AR0116471   36 rows -> 9 SKU lines (incl. 3 returns)
+                 net 102.20   GST 9.20   total 111.40
 ...
-12 invoices   net 1,127.72   GST 101.51   total 1,229.23
-159 source rows -> 70 invoice lines
+AGPL  store 928  AR0116479   KD10998, CM-20, CM-28, CM-38
+                 net  99.30   GST 8.94   total 108.24
+
+SGPL: 12 invoices   net 1,028.42   GST 92.57   total 1,120.99
+AGPL:  1 invoice    net    99.30   GST  8.94   total   108.24
+159 source rows -> 70 invoice lines, 13 invoices, 2 Xero organisations
 ```
 
 Every AR number correct by construction, every commission rate checked, every
@@ -418,6 +423,18 @@ late. Every row in the file is accounted for as `invoiced`, `excluded (with
 reason)`, or `blocking`. The three always sum to the file's row count, and the
 app asserts it.
 
+### Even COURTS needs the alias table — 41% of it
+
+I assumed COURTS' `Model` column was our SKU. Running the prototype against the
+real Drive master (§D3) says otherwise: **15 of 34 values are nicknames** —
+`KYRO`, `POPCON`, `PORTASTOOL`, `MOMO FAUX FUR`, `MATTE 13L SINGLE TIER` — worth
+$464.24 of the $1,127.72 file. A "match on Model" implementation would have
+silently invoiced 59% and dropped the rest.
+
+The fix is already in the ladder: COURTS' own `Item No_` (`IP201479`) is stable
+and unique, so the alias is keyed on it (tier 2), and `Model` becomes a hint
+that speeds up the one-time confirmation. Fifteen aliases, once.
+
 ### The name-only case (Shell) is the hard one
 
 COURTS gives us `Model = OKN-7174` — tier 3, automatic, done. Shell gives us
@@ -429,9 +446,10 @@ COURTS gives us `Model = OKN-7174` — tier 3, automatic, done. Shell gives us
    same product. The $10 price gap says they are not. This is the single
    clearest argument for why tiers 5–6 never auto-accept.
 2. **`Pack of 8 HOUZE - Humipod 800ML`, `Quantity Sold = 1`.** One pack, or
-   eight units? An 8× error on the line. The profile detects the `Pack of N` /
-   `Set of N` prefix and **refuses to guess**, storing a `pack_multiplier` on
-   the alias once a human answers.
+   eight units? An 8× error on the line. ✅ Answered by the GoLabel master
+   (§D4): `LS-9631*8` is a distinct pack SKU, so the alias points at it and the
+   quantity is 1. The profile still detects `Pack of N` / `Set of N` and refuses
+   to guess when no pack SKU exists.
 
 Eight distinct strings, resolved once, and Shell becomes zero-touch.
 
@@ -618,10 +636,13 @@ outlet openings, the month someone merges cells). Raw and unedited — send the
 ugly ones especially.
 
 **2. Product master export**
-One row per SKU: our SKU, product name, barcode(s), **brand**, status
-(active/discontinued), pack size. Export from Xero Items plus whatever
-master list you maintain.
-→ *Brand is the field that routes AGPL vs SGPL. Nothing works without it.*
+🟡 **Partly found.** Two masters in Drive, both read in full (§D): `Master Price
+List - For Ravi.xlsx` (Jun 2024, 2,127 active SKUs, has BRAND + barcode + cost
+tiers) and `GoLabel Master Database 2025 (Updated).xlsx` (Jan 2026, 1,431 SKUs,
+has Brand + barcode + RSP). Neither has `CM-20/28/38`. **Still needed:** whichever
+list is current for 2026 SKUs — or confirmation that Xero Items is the source
+of truth and the app should union Drive + Xero.
+→ *Brand is the field that routes AGPL vs SGPL. Both masters have it.*
 
 **3. Price lists per customer**
 The agreed net price per SKU per customer, **with effective dates**. If prices
@@ -637,8 +658,9 @@ Status from the evidence so far:
   invoice. But I need to know whether the **30% tier is intentional** (§A4) and
   whether `LS-9743-COAL GREY` at 30% vs `LS-9743-WHITE` at 35% is a real deal or
   a COURTS data error.
-- **Shell** — ⚠️ **blocking.** The rate is nowhere in the file and nowhere in
-  Xero. Shell cannot go live without it.
+- **Shell** — ✅ **30%**, confirmed by Brien. Recorded in `profiles/shell.yaml`
+  with an effective date. Brien also asked for a **Commission & Terms tab** in the
+  app where rates can be entered per customer — see §11a.
 - **Prime** — derived as 30% from your invoices; please confirm.
 - Everyone else — needed.
 
@@ -716,26 +738,47 @@ over per customer, only after a clean month.
 
 ---
 
+## 11a. Requested: a Commission & Terms tab
+
+Brien asked for a place in the app to fill in commission rates rather than
+editing YAML. Agreed — this is the right shape:
+
+- One row per customer (optionally per brand or per SKU group, because COURTS
+  runs 30% and 35% side by side).
+- Fields: rate, applies-to (retail ex-GST / retail inc-GST / cost), account
+  code, **effective from**, note. Old rows are never deleted; a new row with a
+  later date supersedes.
+- Editing a rate writes a new version of the customer profile and logs who
+  changed it. The run for any period uses the rate effective for *that* period.
+- Same tab carries payment terms and invoice style, since they change together.
+
+The YAML stays as the storage format underneath; the tab is a form over it.
+Builds in Phase 3 with the rest of the review UI.
+
 ## 12. Questions I need you to answer
 
 The two files answered several of my original questions and raised sharper ones.
 
-### Blocking — these stop work
+### Blocking — all three answered on 2026-09-06
 
-1. **Shell commission rate.** Not in the file, not in Xero, not derivable.
-   Shell cannot be invoiced without it. Also: which account code?
-2. **AGPL Xero access.** ✅ Identity answered by the Yue Hwa PDF: **Audrey
-   Global Pte Ltd** (§C2). Still needed: someone with adviser/user access in
-   AGPL's Xero to authorise the app. The Shell file needs AGPL on day one (§B1).
-3. **Q12 — COURTS vendor code vs brand.** All 159 COURTS rows say
-   `Vendor No_ = SHG`, but the file contains `KD10998` (Kakudo rice bowl) and
-   `CM-20/28/38`, which look like Table Matters. **Does COURTS Table Matters
-   product invoice from SGPL or AGPL?** Brand-routing and COURTS' vendor code
-   disagree, and I need to know which wins.
+1. ✅ **Shell commission rate — 30%.** Recorded. Account code still to confirm.
+2. ✅ **AGPL Xero access** — Brien can authorise the app. Identity: Audrey Global
+   Pte Ltd (§C2).
+3. ✅ **COURTS Kakudo/CM lines are Table Matters → AGPL.** Brand wins over the
+   customer's vendor code. Rule adopted: when a brand is in doubt, look it up in
+   the Drive master price list (§D).
+
+### New blocker surfaced by the master list
+
+3b. **Which product master is current?** The two in Drive are Jun 2024 and Jan
+    2026 and neither has `CM-20/28/38` (§D2). Is Xero Items the source of truth
+    for new SKUs, or is there a newer list?
 
 ### Needed before the COURTS pilot goes live
 
-4. **Store code → Xero contact** for the 12 COURTS codes, and **which "Courts
+4. **Fifteen COURTS aliases** (§D3) — `KYRO`, `POPCON`, `MATTE 13L SINGLE
+   TIER`… → our SKU. I can pre-fill likely matches from the master; you confirm.
+4a. **Store code → Xero contact** for the 12 COURTS codes, and **which "Courts
    Tampines" contact is correct** — `368f74f9…` or `b32222af…`? Both were
    invoiced in July 2026 (F5). Shall I generate the full duplicate report across
    all chains? It is about an hour of your time to tick through and it removes
@@ -791,7 +834,8 @@ impossible, and none of them is the kind a careful person catches reliably at
 2am on a month-end.
 
 **The first move is narrow and concrete: COURTS, draft-only, four weeks.** I
-already know the expected answer — $1,127.72 net, $101.51 GST, 12 invoices. Give
-me the product master, the store mapping, and the July file, and the pilot
-either reproduces your July invoices to the cent or it doesn't. That is proof
+already know the expected answer — $1,127.72 net, $101.51 GST, 13 invoices
+across two organisations. The three blocking questions are answered. Give me the
+15 COURTS aliases, the store mapping, and the July file, and the pilot either
+reproduces your July invoices to the cent or it doesn't. That is proof
 rather than promises, and everything after it is repetition.

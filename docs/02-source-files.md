@@ -332,7 +332,93 @@ run-time stays deterministic.
 
 ---
 
-## What these two files change in the plan
+## File D — the master price lists in Google Drive
+
+Brien's instruction: *"when in doubt, look for the master pricelist in the shared
+drive."* I did. Two candidates, both read in full via the Drive connector.
+
+| File | Location | Modified | Rows | Has BRAND | Has barcode |
+|---|---|---|---|---|---|
+| `Master Price List - For Ravi.xlsx` | Drive `1911XKZ6…` | **Jun 2024** | 2,127 active + 1,149 discontinued | ✅ | ✅ |
+| `GoLabel Master Database 2025 (Updated).xlsx` | Drive `13rGDfCt…` | **Jan 2026** | 1,431 (HOUZE & TM sheet) | ✅ | ✅ |
+
+**Brand split, active SKUs (Ravi master):** TABLE MATTERS 1,050 · HOUZE 851 ·
+LIAO 77 · Finder 53 · ecoHOUZE 52 · Greenshield 11 · Tramontina 4. So the
+`BRAND` column exists, is populated, and routes cleanly: `TABLE MATTERS → AGPL`,
+everything else → SGPL.
+
+### D1. Confirmed: KD10998 is Table Matters → AGPL
+
+```
+KD10998   TABLE MATTERS   BOWLS(1)   Kakudo Assorted 5.25 inch Rice Bowl (Set of 5)   8886483726840
+OKN-7174  Greenshield     Kitchen Necessities   Microwave & Fridge Freezer Wipes 70's    5060110227174
+LS-9743-COAL GREY  HOUZE  Lifestyle  180cm/6ft HDPE Folding Table …   8886483723221
+```
+
+So the COURTS August file **does** split across entities: store 928's AR0116479
+carries $19.38 of Table Matters (KD10998) → AGPL, and — once the CM-20/28/38
+lines are confirmed TM (Brien says they are) — $99.30 in total.
+
+### D2. Both masters are stale, and that is the finding
+
+Neither contains `CM-20`, `CM-28`, `CM-38` (newer SKUs). The Ravi master (2024)
+has none of the *Everyday Chef* range that Shell sells; the GoLabel file (2026)
+has it under `EF` codes:
+
+```
+EF97240G  Table Matters Everyday Chef Series: Non-Stick 24cm Wok Pan …
+EF94200G  Table Matters Everyday Chef Series: 20cm Non Stick Casserole …
+EF07217S  Table Matters Everyday Chef Series: Tempered Glass Universal Lid …
+```
+
+**So there is no single current master.** The app's `Product` table has to be
+seeded from *both* and then kept current from Xero Items. This is a Tier-1 data
+item (plan §10 #2) and it is not solved yet.
+
+### D3. The COURTS `Model` column is not reliably our SKU
+
+Running the prototype against the Ravi master shows exactly how much the alias
+table matters. Of 34 distinct `Model` values in the COURTS file:
+
+| Resolved via master | Not in master |
+|---|---|
+| 19 values — `OKN-*`, `LS-*`, `LN-*`, `KD10998` … | **15 values** — `KYRO`, `POPCON`, `PORTASTOOL`, `KRUSTY`, `MOMO FAUX FUR`, `NORD RECTANGULAR`, `MATTE 5.5L/13L/25L/35L SINGLE TIER`, `MEGASTORE WAREHOUSE SALES`, `ROADSHOW SPECIAL BUY $20`, `CM-20/28/38` |
+| $663.48 of net | **$464.24 of net — 41% of the file** |
+
+These are COURTS' *nicknames* for our products, not codes. `KYRO` is a Houze
+product line; `MATTE 13L SINGLE TIER` is `MS-22xx`. They will never match a SKU
+column. What *will* match, forever, is COURTS' own `Item No_` (`IP201479` etc.),
+which is stable — so the alias key for COURTS is **`(courts, Item No_) →
+our SKU`**, exactly tier 2 of the match ladder, and the `Model` column drops to a
+hint. Fifteen aliases to confirm once; then zero-touch.
+
+This is the strongest possible validation of the plan's rule that an unresolved
+row *blocks* rather than passes: a naive "match on Model" implementation would
+have silently invoiced 59% of COURTS and dropped the rest.
+
+### D4. The Shell `Pack of 8` question is answered by a SKU
+
+GoLabel lists both `LS-9631` *Humipod – Activated Charcoal Dehumidifier (800ml)*
+and **`LS-9631*8`** *… Pack of 8*. The pack is its own SKU, so `Quantity Sold = 1`
+of *Pack of 8 HOUZE – Humipod 800ML* is **one unit of `LS-9631*8`**, not eight
+of `LS-9631`. The `pack_multiplier` field becomes unnecessary for this case —
+the alias simply points at the pack SKU.
+
+### D5. What this means for the app
+
+- **Drive is reachable from the app.** The master lives in Google Drive; the
+  Drive API is available; the app should pull the current master on a schedule
+  rather than rely on someone uploading it.
+- **Xero Items is the other half.** Both masters miss recent SKUs; Xero's item
+  list (which the NTUC invoices already reference by `item_code`) will have them.
+  Product table = union of Drive master + Xero Items, per entity.
+- **Cost tiers are in the master too.** `COST TO RELATED COMPANIES`, `CURRENT
+  COST TO TGG (Mark up 35%)`, `TIER 1/2/3 RSP`. That is the price-list input for
+  itemised customers (plan §10 #3), at least as a starting point.
+
+---
+
+## What these files change in the plan
 
 | Finding | Plan change |
 |---|---|
@@ -350,3 +436,7 @@ run-time stays deterministic.
 | C2: AGPL identified | Audrey Global Pte Ltd, consignor `CC0414` at Yue Hwa. |
 | C2: PDF intake confirmed | PDF parsing moves from Phase 5 to **Phase 4**; text-layer first, OCR fallback. |
 | C3: settlement pattern | Profile gains `settlement: gross | contra`. |
+| D1: KD10998 is Table Matters | COURTS **does** split across entities (store 928 → AGPL). |
+| D2: no single current master | Product table = Drive master ∪ Xero Items, refreshed on schedule. |
+| D3: COURTS `Model` is a nickname 44% of the time | Alias key for COURTS is `Item No_`, not `Model`. ~15 aliases to confirm once. |
+| D4: pack SKUs exist | `Pack of N` resolves to a pack SKU (`LS-9631*8`), not a multiplier. |
