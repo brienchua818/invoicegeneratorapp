@@ -1,0 +1,75 @@
+# Shell petrol stations (dealer-operated) — consignment
+# Derived from Table_Matters_Aug26_Sales_Report.xlsx (10 rows, Aug 2026).
+# Evidence: docs/02-source-files.md §B.
+customer_key: shell_stations
+display_name: Shell service stations (via dealer operators)
+status: active
+entity_routing: by_brand          # §B1 — this file spans AGPL *and* SGPL
+
+source:
+  format: xlsx
+  sheet: Sheet1
+  header_row: 1
+  fingerprint: [Product, Date, 'Quantity Sold', 'Gross Sales Loc Cur', Site]
+
+columns:
+  product_text:  Product          # §B4 — free text ONLY. No SKU, no barcode.
+  txn_date:      Date
+  quantity:      'Quantity Sold'
+  amount:        'Gross Sales Loc Cur'
+  outlet_text:   Site
+
+gst:
+  rate_source: statutory
+  columns:
+    amount: inclusive             # §B3 — SG shelf prices. Declared, then challenged.
+
+commission:
+  mode: from_agreement            # NOT in the file. Must come from the Shell contract.
+  rate: null                      # ← BLOCKS GO-LIVE until supplied (see plan Q4)
+
+proofs:
+  internal_consistency: false     # only one money column — nothing to cross-check
+  customer_total_row: false       # §B3 — no TOTAL row in this file
+  historical_price_challenge: true # ← the ONLY automated check. Weight it heavily.
+  # Because 2 of 3 proofs are unavailable, this customer runs with a tighter
+  # variance guard and stays draft-only for longer than the others.
+
+resolution:
+  sku_match_order: [product_text_alias, description_normalised]
+  # Tier 5/6 fuzzy + LLM suggestions are ADVISORY ONLY here — never auto-accept.
+  # §B4: 'Table Matters Wok Pan Sage' ($25) and 'Table Matters - Everyday Chef
+  # 28CM Non-Stick Wok Pan - Sage' ($35) are near-identical strings at different
+  # prices. A fuzzy matcher would merge them. A human must not.
+  pack_prefix_patterns:           # §B4 — 'Pack of 8', 'Set of 8'
+    - '^(Pack|Set) of (?P<multiplier>\d+)\s+'
+  on_pack_prefix: require_explicit_multiplier   # never assume 1 vs 8
+  outlet_match:
+    method: regex_key             # §B2 — exact, not fuzzy
+    pattern: '(?P<site_code>\d{3}_\d{2})'
+    match_against: xero_contact_name
+    # file 'SHELL JURONG WEST AVE5 611_01'
+    #   -> 'HJCC-(80) - Shell Jurong West Ave5 611_01'   (611_01)
+    # 46 of ~47 Shell contacts carry a site code.
+    manual_aliases:
+      # the one contact with no site code in its name:
+      'SHELL TAMPINES AVE 2': 'The Driving Forcemgmt Service - Shell Tampines Ave 2'
+    require_explicit_mapping: true
+
+invoice:
+  style: summary_plus_commission
+  grain: per_outlet               # per station, per entity
+  revenue_account_code: '6-1000'
+  commission_account_code: null   # TBC with the rate
+  line_description: 'Sales {period:MMMM YYYY}'
+  reference: 'Sales {period:MMMM YYYY}'
+  invoice_date: last_day_of_period
+  due_date: { rule: end_of_month_plus, months: 1 }
+  status_on_create: DRAFT
+
+guards:
+  max_invoice_total: 5000
+  variance_vs_prior_period_pct: 25   # tighter: fewer proofs available
+  block_on_unmapped_sku: true
+  block_on_unknown_outlet: true
+  block_on_negative_net: true

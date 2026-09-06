@@ -1,0 +1,97 @@
+# COURTS (Singapore) Pte Ltd — consignment
+# Derived from ConsignmentPO2436_SHG_20260906.xlsx (159 rows, Aug 2026).
+# Every value below is evidenced in docs/02-source-files.md §A.
+customer_key: courts
+display_name: COURTS (Singapore) Pte Ltd
+status: active
+entity_routing: by_brand          # see plan §4
+
+source:
+  format: xlsx
+  sheet: Sheet1
+  header_row: 1
+  filename_pattern: 'ConsignmentPO(?P<batch>\d+)_(?P<vendor>\w+)_(?P<rundate>\d{8})\.xlsx'
+  fingerprint:                    # exact header set; any drift = STOP
+    - Entry No_
+    - External Document No_
+    - Document No_
+    - Item No_
+    - Invoiced Quantity
+    - Location Code
+    - Posting Date
+    - Order Date
+    - userid
+    - Inventory Status
+    - Vendor No_
+    - Systemdate
+    - BATCHID
+    - PONUMBER
+    - CostPrice
+    - PromoCostPrice
+    - CosttoBuy
+    - Description
+    - Model
+    - Remarks
+    - Unit Price
+  row_filters:
+    - drop_when: { column: 'Entry No_', equals: 0 }     # §A1 template junk row
+    - drop_when: { column: 'Invoiced Quantity', equals: 0 }
+
+columns:
+  transaction_id: 'Entry No_'     # dedupe / audit trail
+  outlet_code:    'Location Code'
+  customer_sku:   'Item No_'
+  our_sku:        'Model'
+  description:    'Description'
+  quantity:       'Invoiced Quantity'
+  unit_price_net: 'CostPrice'     # ← THE INVOICE PRICE (ex-GST)
+  retail_gross:   'Unit Price'    # GST-INCLUSIVE, verification only
+  ar_reference:   'PONUMBER'
+  batch_id:       'BATCHID'
+  posting_date:   'Posting Date'
+
+gst:
+  rate_source: statutory          # 9% from 2024-01-01, by period
+  columns:                        # §A3 — treatment is PER COLUMN, not per file
+    unit_price_net: exclusive
+    retail_gross:   inclusive
+
+# Commission is NOT calculated — it is verified. §A4
+commission:
+  mode: verify_only
+  expected_rates: [0.30, 0.35]
+  tolerance: 0.001
+  formula: 'unit_price_net / (retail_gross / (1 + gst_rate))'
+  on_unexpected_rate: warn_and_queue   # new deal, or a COURTS error — human sees it
+
+proofs:
+  internal_consistency: true      # Proof 1 — the ratio check above
+  customer_total_row: false       # Proof 2 — this file has no TOTAL row
+  historical_price_challenge: true # Proof 3 — cost price vs last batch, per SKU
+
+resolution:
+  sku_match_order: [our_sku_exact, customer_sku_alias, description_normalised]
+  outlet_match:
+    method: code_lookup           # 'Location Code' -> ContactLink, never fuzzy
+    require_explicit_mapping: true
+  ar_number:
+    derive_from: outlet_code      # §A2 — strictly 1:1, never typed
+    validate: '^AR\d{7}$'         # kills the truncated-AR bug (findings F7)
+
+invoice:
+  style: itemised                 # one line per SKU; CostPrice x Qty
+  grain: per_outlet               # 12 stores -> 12 invoices
+  aggregate_transactions_by: our_sku   # 159 rows -> ~9 lines per store
+  revenue_account_code: '6-1000'
+  line_description: '{our_sku}: {product_name} - {barcode}'
+  reference: '{ar_reference} sales {period:MMMM YYYY}'
+  invoice_date: last_day_of_period
+  due_date: { rule: end_of_month_plus, months: 2 }
+  status_on_create: DRAFT
+
+guards:
+  max_invoice_total: 25000
+  variance_vs_prior_period_pct: 40
+  block_on_unmapped_sku: true
+  block_on_unknown_outlet: true
+  block_on_negative_net: false    # §A5 — returns are normal here
