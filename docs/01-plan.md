@@ -4,7 +4,8 @@
 
 **Evidence base — read these first:**
 - `00-findings.md` — what your live Xero org actually contains
-- `02-source-files.md` — full analysis of the real customer files you sent, plus the master price lists found in Drive
+- `02-source-files.md` — full analysis of the real customer files you sent
+- `03-master-price-list.md` — the product master (Master Price List 4.0), its per-customer alias columns, and how the app uses it
 - `profiles/courts.yaml`, `profiles/shell.yaml` — working profiles built from them
 
 This plan refers to both constantly. Where it says (F3) or (§A4) it means a
@@ -61,6 +62,106 @@ auditable arithmetic — which is exactly what you want touching your GST return
 
 **Rule: no LLM output ever reaches Xero without passing through a
 deterministic validator or a human click.**
+
+---
+
+## 1a. Two business models, two pipelines, one app
+
+Brien's correction (2026-09-07): **NTUC FairPrice is not a consignment
+account.** It buys on **SOR (sale-or-return)** terms, and that changes *when*
+the invoice is raised, *what triggers it*, and *what it is checked against*.
+The two models follow different SOPs and the app has to treat them as two
+pipelines that share an engine — not one pipeline with a flag.
+
+| | **Consignment** (post-sale) | **SOR** (pre-dispatch) |
+|---|---|---|
+| Trigger | Customer's **monthly sales report** arrives | Customer's **purchase order** arrives |
+| When we invoice | After the month closes, for what *sold* | At dispatch, for what we *ship* |
+| Source document | Sales/statement file (xlsx, PDF) | PO (xlsx, PDF, portal, EDI) |
+| Price basis | Their retail less commission, *or* their stated cost | Our agreed **cost price** to them |
+| Commission | Yes — per customer / per SKU | **None** |
+| Reference on invoice | AR number / "Sales {month}" | **PO number** |
+| Invoice date | Last day of period | **Delivery date** |
+| Cadence | One batch per customer per month | One invoice per PO per outlet, continuously |
+| Companion documents | none | **Delivery order / packing list**, PO acknowledgement |
+| Returns | Netted in next statement (COURTS) or credit note | **Credit note** against the original invoice, later |
+| Xero contact grain | per outlet or HQ (profile) | per outlet (the PO's ship-to) |
+| Customers (confirmed by Brien, 2026-09-07) | **Everyone else** — COURTS, Shell, Yue Hwa, Prime, Giant, Cold Storage, Sheng Siong, Isetan, BHG … | **NTUC FairPrice only** |
+
+### What the Xero data says about the SOR flow
+
+Reading the 2026 invoices for NTUC NEX / JEM / Parkway / VivoCity:
+
+- **Reference = an 8-digit NTUC PO number** (`61033667`, `61742370`, `62347851`,
+  `62730727`), monotonically increasing through the year. It is a PO number,
+  not a period.
+- **Dates are arbitrary** — 6 Jan, 13 Jan, 20 Jan, 26 Jan, 10 Mar, 30 Mar,
+  14 Apr, 4 May, 12 May … — i.e. driven by deliveries, not month-end.
+- **Itemised at our price**, `item_code` populated, GST exclusive (F1 Style A).
+- **Terms ≈ 60 days but applied inconsistently**: 2 Jul → 29 Sep, 24 Jun →
+  29 Aug, 18 Aug → 17 Oct, 30 Mar → 30 May, 13 Jan → 1 Apr. One rule in the
+  profile fixes that.
+- **SI26060070 (JEM, 31 Jul) has a blank reference.** A delivery invoice with
+  no PO number is exactly what the SOR pipeline must refuse to create.
+
+So the "itemised" style I had filed under consignment (§6.2) is really the SOR
+delivery invoice. Ideal Parts and Horme (PO-referenced: `PO-CH-26-102664`) look
+the same, but Brien's classification puts **only NTUC FairPrice** in SOR.
+
+### The SOR pipeline
+
+```
+ 1. PO intake        xlsx / PDF / portal export; one PO = one outlet
+ 2. Fingerprint      header hash per customer PO format  -> STOP on drift
+ 3. Parse            PO no., ship-to outlet, delivery date, lines (their SKU, qty, unit cost?)
+ 4. Resolve SKU      their article code -> our SKU via the master's NTUC SKU column
+ 5. Price            agreed cost from master (NTUC COST) — or from the PO if it states one;
+                     if both exist they MUST agree                      -> STOP on mismatch
+ 6. Availability     qty vs stock (later phase; manual confirm at first)
+ 7. Route            brand -> entity (same rule as consignment)
+ 8. Build            invoice: reference = PO no., date = delivery date, per outlet,
+                     itemised, GST exclusive; plus a delivery order / packing list
+ 9. Guardrails       PO no. present & unique (idempotency key = customer+PO no.),
+                     qty > 0, price within tolerance of last PO for same SKU
+10. PREVIEW          human sees PO alongside the invoice + DO
+11. Post as DRAFT    Xero
+12. Later: returns   credit note referencing original invoice; PO no. carried through
+```
+
+Steps 2, 4, 7, 10–11 are the *same code* as consignment. What differs is the
+trigger, the price source, the reference, the idempotency key (PO number, not
+period), and the companion DO.
+
+### What this changes in the design
+
+- **Profile gains `mode: consignment | sor`.** Each customer is one or the
+  other; a customer can have two profiles (NTUC in-store SOR vs NTUC Online).
+- **The idempotency key differs**: consignment = `(entity, customer, outlet,
+  period)`; SOR = `(entity, customer, PO number)`. A re-sent PO must not
+  produce a second invoice.
+- **Price source for SOR is the master's per-customer cost column.**
+  `NTUC COST` is currently **empty** in Master 4.0 (`03-master-price-list.md`).
+  Either NTUC's PO states the unit cost and we invoice that, or the column has
+  to be filled before NTUC can go live — Q-SOR-3.
+- **Delivery order output** is new scope: a PDF/xlsx DO per invoice, in the
+  format NTUC's receiving dock accepts. Needs a sample (Q-SOR-4).
+- **Credit notes** move from "Phase 5 nice-to-have" to a first-class SOR step.
+- **The Commission & Terms tab** (§11a) becomes **Customer Terms**: mode,
+  commission (consignment only), payment terms, price source, DO format.
+
+### Questions this raises (blocking for NTUC, not for COURTS)
+
+- ~~Q-SOR-1~~ ✅ **Answered:** all customers are consignment **except NTUC
+  FairPrice**, which is SOR. (Ideal Parts and Horme are PO-referenced wholesale
+  and sit outside this app's scope unless Brien says otherwise.)
+- **Q-SOR-2.** Send both SOPs (consignment and SOR) — the written procedure
+  your team follows today. The app should encode them, not reinvent them.
+- **Q-SOR-3.** A sample NTUC PO (xlsx or PDF) and how it arrives (email
+  attachment? supplier portal? EDI?). Does it state unit cost?
+- **Q-SOR-4.** Does NTUC require a delivery order / packing list in a
+  specific format? Sample please.
+- **Q-SOR-5.** How are NTUC returns handled today — credit note per return,
+  or netted?
 
 ---
 
@@ -345,8 +446,9 @@ The general principle, worth stating plainly:
 
 ### 6.2 The three styles
 
-**`itemised`** — COURTS (recommended, changed from current practice), NTUC,
-Ideal Parts, Horme:
+**`itemised`** — COURTS consignment (recommended, changed from current
+practice); and the *default* for every **SOR** invoice (NTUC, Ideal Parts, Horme —
+see §1a):
 - one Xero line per resolved SKU, transactions aggregated by SKU
   (159 COURTS rows → ~9 lines per store)
 - `item_code` populated → your Xero inventory reports keep working
@@ -423,17 +525,25 @@ late. Every row in the file is accounted for as `invoiced`, `excluded (with
 reason)`, or `blocking`. The three always sum to the file's row count, and the
 app asserts it.
 
-### Even COURTS needs the alias table — 41% of it
+### Even COURTS needs the alias table — and the alias table already exists
 
-I assumed COURTS' `Model` column was our SKU. Running the prototype against the
-real Drive master (§D3) says otherwise: **15 of 34 values are nicknames** —
-`KYRO`, `POPCON`, `PORTASTOOL`, `MOMO FAUX FUR`, `MATTE 13L SINGLE TIER` — worth
-$464.24 of the $1,127.72 file. A "match on Model" implementation would have
-silently invoiced 59% and dropped the rest.
+I assumed COURTS' `Model` column was our SKU. It is for 24 of 36 articles. The
+other 12 are COURTS' *nicknames* — `KYRO`, `POPCON`, `PORTASTOOL`, `MOMO FAUX
+FUR` — plus three SKUs (`CM-20/28/38`) newer than the master. Together they are
+**$390.24 of the $1,127.72 file (35%)**. A "match on Model" implementation would
+have silently invoiced the rest and dropped these.
 
-The fix is already in the ladder: COURTS' own `Item No_` (`IP201479`) is stable
-and unique, so the alias is keyed on it (tier 2), and `Model` becomes a hint
-that speeds up the one-time confirmation. Fifteen aliases, once.
+The good news came from the master itself: **Master Price List 4.0 carries a
+`COURTS SKU` column** (914 rows populated) holding COURTS' own `IP…` article
+codes — and matching `Item No_` against it resolves the `MATTE` and `NORD`
+nicknames instantly (`docs/03-master-price-list.md §3`). The same file has
+`NTUC SKU`, `GIANT SKU`, `Yue Hwa SKU`, `BHG SKU`, `Sheng Siong SKU`,
+`Gain City SKU`, `Watsons PLU`. **That is the `ProductAlias` table, already
+maintained by your team.** The app reads it; it does not build a rival.
+
+So the one-time COURTS work is: fill about ten `COURTS SKU` cells in the master
+(the KYRO/POPCON/PORTASTOOL/KRUSTY/MOMO rows) and add `CM-20/28/38` as SKUs.
+Done in the file you already maintain, and every future month inherits it.
 
 ### The name-only case (Shell) is the hard one
 
@@ -629,24 +739,28 @@ they produced `profiles/courts.yaml` and `profiles/shell.yaml` plus every
 finding in `02-source-files.md`. That is exactly the loop; please repeat it for
 the rest.
 
-Still needed: Giant, Cold Storage, NTUC, Sheng Siong, Isetan, Yue Hwa, BHG —
-and **two more months each for COURTS and Shell**. One file tells me the layout;
+✅ **Also received: Prime (Aug 2026, scanned PDF, both entities in one file)**
+— see `02-source-files.md §E` and `profiles/prime.yaml`.
+
+Still needed: Giant, Cold Storage, NTUC (a **PO**, not a sales report), Sheng
+Siong, Isetan, BHG — and **two more months each for COURTS, Shell and Prime**. One file tells me the layout;
 three tell me what *varies* (new columns, months with returns, promo lines,
 outlet openings, the month someone merges cells). Raw and unedited — send the
 ugly ones especially.
 
 **2. Product master export**
-🟡 **Partly found.** Two masters in Drive, both read in full (§D): `Master Price
-List - For Ravi.xlsx` (Jun 2024, 2,127 active SKUs, has BRAND + barcode + cost
-tiers) and `GoLabel Master Database 2025 (Updated).xlsx` (Jan 2026, 1,431 SKUs,
-has Brand + barcode + RSP). Neither has `CM-20/28/38`. **Still needed:** whichever
-list is current for 2026 SKUs — or confirmation that Xero Items is the source
-of truth and the app should union Drive + Xero.
-→ *Brand is the field that routes AGPL vs SGPL. Both masters have it.*
+✅ **Received: `Master Price List 4.0 - 2025 R1.xlsm`** (Drive
+`1kfa_KvpN8klUX1HhbIFZFTXpFN4N5V_D`, modified 2026-09-04). 3,810 SKUs, `BRAND`,
+`STATUS`, `BARCODE`, and per-customer alias + cost columns. Fully documented in
+`03-master-price-list.md`. Two gaps to close in the file itself: `CM-20/28/38`
+are missing, and 25 rows have a blank brand (unroutable).
+→ *Brand routes AGPL vs SGPL; the per-customer SKU columns are the alias table.*
 
 **3. Price lists per customer**
-The agreed net price per SKU per customer, **with effective dates**. If prices
-differ per outlet, say so.
+🟡 **Partly in the master.** `COURTS Cost (30-35%）` 220 rows, `BHG COST (35%)`
+326, `GIANT COST` 115, `Sheng Siong COST` 6 — but `NTUC COST` and `Yue Hwa COST`
+are **empty**. For NTUC (itemised, price from us) that is a real gap. Also
+needed: effective dates — the master holds one current price per cell.
 → *For itemised customers, this — not the file — sets the invoice price.*
 
 **4. Commission / margin terms per customer**
@@ -661,7 +775,7 @@ Status from the evidence so far:
 - **Shell** — ✅ **30%**, confirmed by Brien. Recorded in `profiles/shell.yaml`
   with an effective date. Brien also asked for a **Commission & Terms tab** in the
   app where rates can be entered per customer — see §11a.
-- **Prime** — derived as 30% from your invoices; please confirm.
+- **Prime** — ✅ **30%**, printed on Prime's own consignment report (§E2).
 - Everyone else — needed.
 
 ### Tier 2 — needed before go-live
@@ -727,8 +841,9 @@ That is a short list, and it is the whole critical path to a working pilot.
 | **4** | Onboard remaining customers; AI-assisted onboarding wizard; **PDF intake + Bills (Yue Hwa)** | All 8+ chains live | 2–3 wk |
 | **5** | Credit notes, variance dashboards, email intake | Full monthly close in the app | 2–3 wk |
 
-**~9–13 weeks to full coverage; ~4 weeks to COURTS running live in draft
-mode.** Phases 0–2 are the risky part and they are front-loaded deliberately —
+**~11–16 weeks to full coverage across both models; ~4 weeks to COURTS
+(consignment) running live in draft mode; NTUC (SOR) follows once Q-SOR-2/3/4
+are answered.** Phases 0–2 are the risky part and they are front-loaded deliberately —
 if the GST engine can't reproduce your existing invoices exactly, we find out
 in week 1, not week 9.
 
@@ -738,7 +853,7 @@ over per customer, only after a clean month.
 
 ---
 
-## 11a. Requested: a Commission & Terms tab
+## 11a. Requested: a Commission & Terms tab (now: Customer Terms)
 
 Brien asked for a place in the app to fill in commission rates rather than
 editing YAML. Agreed — this is the right shape:
@@ -751,6 +866,8 @@ editing YAML. Agreed — this is the right shape:
 - Editing a rate writes a new version of the customer profile and logs who
   changed it. The run for any period uses the rate effective for *that* period.
 - Same tab carries payment terms and invoice style, since they change together.
+- **And the mode** — consignment or SOR (§1a) — plus, for SOR customers, the
+  price source (master cost column vs PO-stated) and the delivery-order format.
 
 The YAML stays as the storage format underneath; the tab is a form over it.
 Builds in Phase 3 with the rest of the review UI.
@@ -768,16 +885,21 @@ The two files answered several of my original questions and raised sharper ones.
    customer's vendor code. Rule adopted: when a brand is in doubt, look it up in
    the Drive master price list (§D).
 
-### New blocker surfaced by the master list
+### Formerly blocking — resolved
 
-3b. **Which product master is current?** The two in Drive are Jun 2024 and Jan
-    2026 and neither has `CM-20/28/38` (§D2). Is Xero Items the source of truth
-    for new SKUs, or is there a newer list?
+3b. ✅ **Which product master is current?** `Master Price List 4.0 - 2025 R1.xlsm`
+    (Brien, 2026-09-06). `CM-20/28/38` are simply not in it yet — to be added.
 
 ### Needed before the COURTS pilot goes live
 
-4. **Fifteen COURTS aliases** (§D3) — `KYRO`, `POPCON`, `MATTE 13L SINGLE
-   TIER`… → our SKU. I can pre-fill likely matches from the master; you confirm.
+4. **Ten `COURTS SKU` cells + three new SKUs in the master** (§3 of
+   `03-master-price-list.md`): fill `IP201581/82/84` (KYRO colours), `IP209537`
+   (POPCON), `IP201484` (PORTASTOOL), `IP198842` (KRUSTY), `IP215623/25` (MOMO)
+   against their `CS-3311-*`, `MS-2631-*`, `CS-3210/11-*`, `LN-5373`, `LS-9579-*`
+   rows; add `CM-20/28/38`. Tell me how `ROADSHOW SPECIAL BUY $20` and
+   `MEGASTORE WAREHOUSE SALES` should be invoiced — they are event lines, not SKUs.
+4b. **`IP138548` / `LN-5182-BEIGE`:** master says COURTS cost 10.27, the file says
+   10.67. Which is right?
 4a. **Store code → Xero contact** for the 12 COURTS codes, and **which "Courts
    Tampines" contact is correct** — `368f74f9…` or `b32222af…`? Both were
    invoiced in July 2026 (F5). Shall I generate the full duplicate report across
@@ -835,7 +957,8 @@ impossible, and none of them is the kind a careful person catches reliably at
 
 **The first move is narrow and concrete: COURTS, draft-only, four weeks.** I
 already know the expected answer — $1,127.72 net, $101.51 GST, 13 invoices
-across two organisations. The three blocking questions are answered. Give me the
-15 COURTS aliases, the store mapping, and the July file, and the pilot either
-reproduces your July invoices to the cent or it doesn't. That is proof
+across two organisations. The three blocking questions are answered and the product
+master is in hand. Fill the ten `COURTS SKU` cells, give me the store mapping
+and the July file, and the pilot either reproduces your July invoices to the
+cent or it doesn't. That is proof
 rather than promises, and everything after it is repetition.

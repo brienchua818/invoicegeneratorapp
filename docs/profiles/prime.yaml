@@ -1,0 +1,62 @@
+# Prime Supermarket (1996) Pte Ltd — consignment
+# Derived from A050__S119__CON_AUG26.pdf (scanned, 6 pages, Aug 2026).
+# Evidence: docs/02-source-files.md §E.
+customer_key: prime
+display_name: Prime Supermarket (1996) PTE LTD
+mode: consignment
+status: active
+entity_routing: by_brand           # Prime pre-splits by vendor code; brand rule agrees (§E1)
+vendor_codes:                      # printed on the report header
+  A050: AGPL                       # AUDREY GLOBAL PTE LTD (CONSIGNMENT), category 05050
+  S119: SGPL                       # SHELDON GLOBAL PTE LTD (CONSIGNMENT), category 05051
+
+source:
+  format: pdf_scanned              # no text layer; hand-signed printout (§E5)
+  ocr: { required: true, detect_orientation: true }   # detail pages arrive rotated 180°
+  document_structure:
+    - summary_page:                # one per vendor code — THIS drives the invoice
+        fields: [vendor_code, vendor_name, item_category, commission_rate_pct, period_from, period_to]
+        table: { columns: [Period, '<outlet>...'], rows: [taxable_sales, commission, total] }
+        grand_total: { label: 'Grand Total' }
+    - detail_pages:                # per outlet, per product group — used for Proof 2 + analytics
+        columns: ['Item No', Description, QTY, 'Net Sales', 'Disc.', 'Gross Amount']
+        totals: ['Group <n> Total', 'TOTAL FOR <outlet>']
+  fingerprint: ['CONSIGNMENT REPORT', 'Vendor Code', 'Commission Rate %', 'FOR THE PERIODS', 'Taxable Sales', 'Grand Total']
+
+gst:
+  rate_source: statutory
+  columns:
+    net_sales: exclusive           # §E3 — every line x 1.09 = a shelf price
+    gross_amount: exclusive        # gross = net + disc, still ex-GST
+
+commission:
+  mode: verify_against_report      # the rate is PRINTED on the summary page
+  rate: 0.30                       # matches Xero-derived 30% and the master header
+  applies_to: net_sales_after_disc # 730.15 x 30% = 219.05 (§E2)
+  account_code: '8-2006'           # as used on SI26060095
+
+proofs:
+  internal_consistency: true       # rate printed vs rate computed; net x 1.09 = shelf prices
+  customer_total_row: true         # detail lines sum to summary Taxable Sales (§E4)
+  historical_price_challenge: true
+
+resolution:
+  sku_match_order: [customer_sku_alias, description_normalised]
+  # §E6: Prime item codes (0505000064…) have no column in Master 4.0 yet.
+  outlet_match:
+    method: hq                     # one Xero contact; outlets BR16/TP25 are line detail only
+
+invoice:
+  style: summary_plus_commission   # matches current Xero practice
+  grain: per_hq                    # one invoice per vendor code (= per entity) per month
+  line_description: 'Sales {period:MMMM YYYY}'
+  reference: 'Sales {period:MMMM YYYY}'
+  invoice_date: last_day_of_period
+  due_date: { rule: end_of_month_plus, months: 2 }   # SI26060095: 31 Jul -> 30 Sep
+  status_on_create: DRAFT
+
+guards:
+  block_on_commission_rate_mismatch: true   # printed 30% must equal profile
+  block_on_summary_detail_mismatch: true
+  max_invoice_total: 10000
+  variance_vs_prior_period_pct: 40
