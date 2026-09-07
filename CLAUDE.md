@@ -31,6 +31,20 @@ session must not re-derive.
 - Older lists (`Master Price List - For Ravi.xlsx` 2024, `GoLabel Master
   Database 2025`) are superseded; do not use them.
 
+## Two business models — never conflate them
+- **Consignment** (post-sale): the customer's monthly sales report triggers an
+  invoice for what sold; commission applies; reference = AR no. / period;
+  idempotency = (entity, customer, outlet, period). COURTS, Shell, Yue Hwa, Prime.
+- **SOR / sale-or-return** (pre-dispatch): the customer's **PO** triggers an
+  invoice at delivery for what we ship, at our cost price, no commission;
+  reference = **PO number** (NTUC's are 8 digits); date = delivery date;
+  idempotency = (entity, customer, PO no.); delivery order accompanies goods;
+  returns come back as credit notes. **NTUC FairPrice is SOR, not consignment**
+  (Brien, 2026-09-07). Ideal Parts and Horme are PO-referenced too.
+- Each profile carries `mode: consignment | sor`. Customers not yet classified:
+  Giant, Cold Storage, Sheng Siong, BHG, Isetan (plan §1a Q-SOR-1).
+- `NTUC COST` in the master is empty — SOR pricing for NTUC is unresolved.
+
 ## Commission and terms (confirmed)
 - COURTS: per-SKU, 35% standard / 30% on some lines; the file's `CostPrice`
   is authoritative — bill it, verify the implied rate.

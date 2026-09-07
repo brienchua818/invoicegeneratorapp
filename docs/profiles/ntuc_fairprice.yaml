@@ -1,0 +1,60 @@
+# NTUC FairPrice — SOR (sale-or-return), in-store outlets
+# STATUS: skeleton. Built from the Xero invoice pattern only (plan §1a); the PO
+# file format, price source and DO format are unknown until Q-SOR-2/3/4 are
+# answered. Nothing here is final.
+customer_key: ntuc_fairprice
+display_name: NTUC FairPrice Co-operative Limited
+mode: sor                          # NOT consignment — invoice at dispatch, per PO
+status: draft
+entity_routing: by_brand           # NTUC carries HOUZE + Greenshield today (SGPL)
+
+source:
+  format: TBC                      # xlsx / PDF / portal export — need a sample PO
+  fingerprint: []                  # filled once a sample PO is in hand
+
+columns:                           # expected on the PO; names TBC
+  po_number:      TBC              # 8 digits, e.g. 62347851 (from Xero references)
+  ship_to_outlet: TBC              # -> ContactLink; NTUC has ~48 contacts, many duplicated
+  delivery_date:  TBC
+  customer_sku:   TBC              # -> master 'NTUC SKU' column (542 rows populated)
+  quantity:       TBC
+  unit_cost:      TBC              # if present, MUST agree with master 'NTUC COST'
+
+pricing:
+  source: master_cost_column       # 'NTUC COST' — currently EMPTY in Master 4.0 (blocker)
+  fallback: po_stated_cost         # only if the PO carries a unit cost
+  on_disagreement: stop
+
+gst:
+  rate_source: statutory
+  columns:
+    unit_cost: exclusive           # observed on every NTUC invoice in Xero
+
+resolution:
+  sku_match_order: [customer_sku_alias, our_sku_exact]
+  outlet_match:
+    method: code_lookup            # PO ship-to -> ContactLink, never fuzzy
+    require_explicit_mapping: true
+
+invoice:
+  style: itemised
+  grain: per_po                    # one invoice per PO (= per outlet delivery)
+  idempotency_key: [entity, customer_key, po_number]
+  reference: '{po_number}'         # never blank — SI26060070 shows why
+  invoice_date: delivery_date
+  due_date: { rule: days, days: 60 }   # observed ~60d, inconsistently; confirm
+  line_description: '{customer_sku} | {our_sku}: {product_name} - {barcode}'
+  revenue_account_code: '6-1000'
+  status_on_create: DRAFT
+  companion_documents:
+    delivery_order: { format: TBC }    # Q-SOR-4
+
+returns:
+  method: credit_note                # against the original invoice; confirm (Q-SOR-5)
+
+guards:
+  block_on_missing_po_number: true
+  block_on_duplicate_po_number: true
+  block_on_unmapped_sku: true
+  block_on_unknown_outlet: true
+  price_variance_vs_last_po_pct: 10

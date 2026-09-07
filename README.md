@@ -16,7 +16,7 @@ data, plus a runnable proof of the riskiest part.
 | [`docs/02-source-files.md`](docs/02-source-files.md) | Full analysis of three real customer documents: COURTS (xlsx), Shell (xlsx), Yue Hwa (PDF statement + tax invoice) |
 | [`docs/03-master-price-list.md`](docs/03-master-price-list.md) | The product master in Drive: structure, per-customer alias columns, and how the app uses it |
 | [`docs/01-plan.md`](docs/01-plan.md) | The design: how customers are "taught", GST, entity routing, robustness, Xero API, build plan, and the questions that need answering |
-| [`docs/profiles/`](docs/profiles/) | Working customer profiles built from the COURTS and Shell files |
+| [`docs/profiles/`](docs/profiles/) | Customer profiles: COURTS and Shell (consignment, from real files); NTUC FairPrice (SOR, skeleton) |
 
 ## Run the proof
 

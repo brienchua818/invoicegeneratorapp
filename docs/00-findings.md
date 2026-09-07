@@ -30,6 +30,13 @@ SI26060093  Courts Singapore Pte Ltd - Toa Payoh   2026-07-31
 
 The app must support **both**, selected per customer.
 
+> **Reinterpreted 2026-09-07.** Style A is not a consignment style at all — it
+> is the **SOR delivery invoice** (plan §1a). Every 2026 NTUC invoice carries an
+> 8-digit NTUC **PO number** as its reference and is dated by delivery, not
+> month-end. NTUC FairPrice buys on sale-or-return; Ideal Parts and Horme are
+> PO-referenced wholesale. Style B (and COURTS' itemised-from-CostPrice variant)
+> is the consignment side.
+
 ## F2. Commission rates are fixed per customer and machine-checkable
 
 | Customer | Rate (observed) | Samples |
@@ -104,8 +111,10 @@ These are live in Xero right now. They are the honest business case for the app.
 | SI26060092 vs SI26060084 | Two different Xero contacts, both "Courts ... Tampines", invoiced in the same batch |
 | COURTS Jul batch | Due dates split: most `2026-09-29`, Tampines `2026-08-31` |
 | SI26060020 etc. | Invoice number `SI2606…` on invoices dated July and August |
+| SI26060070 | NTUC JEM delivery invoice with a **blank reference** — no PO number |
+| NTUC 2026 | Payment terms ≈ 60 days but inconsistently applied (2 Jul → 29 Sep, 18 Aug → 17 Oct, 13 Jan → 1 Apr) |
 
-Eight distinct defects in a single month's consignment run, all of the type a
+Ten distinct defects across a single quarter's invoicing, all of the type a
 deterministic generator makes structurally impossible.
 
 ## F8. Only SGPL is reachable from this session

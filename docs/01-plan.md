@@ -65,6 +65,106 @@ deterministic validator or a human click.**
 
 ---
 
+## 1a. Two business models, two pipelines, one app
+
+Brien's correction (2026-09-07): **NTUC FairPrice is not a consignment
+account.** It buys on **SOR (sale-or-return)** terms, and that changes *when*
+the invoice is raised, *what triggers it*, and *what it is checked against*.
+The two models follow different SOPs and the app has to treat them as two
+pipelines that share an engine — not one pipeline with a flag.
+
+| | **Consignment** (post-sale) | **SOR** (pre-dispatch) |
+|---|---|---|
+| Trigger | Customer's **monthly sales report** arrives | Customer's **purchase order** arrives |
+| When we invoice | After the month closes, for what *sold* | At dispatch, for what we *ship* |
+| Source document | Sales/statement file (xlsx, PDF) | PO (xlsx, PDF, portal, EDI) |
+| Price basis | Their retail less commission, *or* their stated cost | Our agreed **cost price** to them |
+| Commission | Yes — per customer / per SKU | **None** |
+| Reference on invoice | AR number / "Sales {month}" | **PO number** |
+| Invoice date | Last day of period | **Delivery date** |
+| Cadence | One batch per customer per month | One invoice per PO per outlet, continuously |
+| Companion documents | none | **Delivery order / packing list**, PO acknowledgement |
+| Returns | Netted in next statement (COURTS) or credit note | **Credit note** against the original invoice, later |
+| Xero contact grain | per outlet or HQ (profile) | per outlet (the PO's ship-to) |
+| Customers (to confirm, Q-SOR-1) | COURTS, Shell, Yue Hwa, Prime, Sheng Siong?, BHG?, Isetan? | **NTUC FairPrice**, NTUC Online?, Giant?, Cold Storage? |
+
+### What the Xero data says about the SOR flow
+
+Reading the 2026 invoices for NTUC NEX / JEM / Parkway / VivoCity:
+
+- **Reference = an 8-digit NTUC PO number** (`61033667`, `61742370`, `62347851`,
+  `62730727`), monotonically increasing through the year. It is a PO number,
+  not a period.
+- **Dates are arbitrary** — 6 Jan, 13 Jan, 20 Jan, 26 Jan, 10 Mar, 30 Mar,
+  14 Apr, 4 May, 12 May … — i.e. driven by deliveries, not month-end.
+- **Itemised at our price**, `item_code` populated, GST exclusive (F1 Style A).
+- **Terms ≈ 60 days but applied inconsistently**: 2 Jul → 29 Sep, 24 Jun →
+  29 Aug, 18 Aug → 17 Oct, 30 Mar → 30 May, 13 Jan → 1 Apr. One rule in the
+  profile fixes that.
+- **SI26060070 (JEM, 31 Jul) has a blank reference.** A delivery invoice with
+  no PO number is exactly what the SOR pipeline must refuse to create.
+
+So the "itemised" style I had filed under consignment (§6.2) is really the SOR
+delivery invoice. Ideal Parts and Horme (PO-referenced: `PO-CH-26-102664`) are
+the same pattern — those are plain wholesale/SOR, not consignment.
+
+### The SOR pipeline
+
+```
+ 1. PO intake        xlsx / PDF / portal export; one PO = one outlet
+ 2. Fingerprint      header hash per customer PO format  -> STOP on drift
+ 3. Parse            PO no., ship-to outlet, delivery date, lines (their SKU, qty, unit cost?)
+ 4. Resolve SKU      their article code -> our SKU via the master's NTUC SKU column
+ 5. Price            agreed cost from master (NTUC COST) — or from the PO if it states one;
+                     if both exist they MUST agree                      -> STOP on mismatch
+ 6. Availability     qty vs stock (later phase; manual confirm at first)
+ 7. Route            brand -> entity (same rule as consignment)
+ 8. Build            invoice: reference = PO no., date = delivery date, per outlet,
+                     itemised, GST exclusive; plus a delivery order / packing list
+ 9. Guardrails       PO no. present & unique (idempotency key = customer+PO no.),
+                     qty > 0, price within tolerance of last PO for same SKU
+10. PREVIEW          human sees PO alongside the invoice + DO
+11. Post as DRAFT    Xero
+12. Later: returns   credit note referencing original invoice; PO no. carried through
+```
+
+Steps 2, 4, 7, 10–11 are the *same code* as consignment. What differs is the
+trigger, the price source, the reference, the idempotency key (PO number, not
+period), and the companion DO.
+
+### What this changes in the design
+
+- **Profile gains `mode: consignment | sor`.** Each customer is one or the
+  other; a customer can have two profiles (NTUC in-store SOR vs NTUC Online).
+- **The idempotency key differs**: consignment = `(entity, customer, outlet,
+  period)`; SOR = `(entity, customer, PO number)`. A re-sent PO must not
+  produce a second invoice.
+- **Price source for SOR is the master's per-customer cost column.**
+  `NTUC COST` is currently **empty** in Master 4.0 (`03-master-price-list.md`).
+  Either NTUC's PO states the unit cost and we invoice that, or the column has
+  to be filled before NTUC can go live — Q-SOR-3.
+- **Delivery order output** is new scope: a PDF/xlsx DO per invoice, in the
+  format NTUC's receiving dock accepts. Needs a sample (Q-SOR-4).
+- **Credit notes** move from "Phase 5 nice-to-have" to a first-class SOR step.
+- **The Commission & Terms tab** (§11a) becomes **Customer Terms**: mode,
+  commission (consignment only), payment terms, price source, DO format.
+
+### Questions this raises (blocking for NTUC, not for COURTS)
+
+- **Q-SOR-1.** Classify every customer: consignment or SOR? My reading of the
+  data: COURTS, Shell, Yue Hwa, Prime = consignment; NTUC FairPrice, Ideal
+  Parts, Horme = SOR. Giant, Cold Storage, Sheng Siong, BHG, Isetan — unknown.
+- **Q-SOR-2.** Send both SOPs (consignment and SOR) — the written procedure
+  your team follows today. The app should encode them, not reinvent them.
+- **Q-SOR-3.** A sample NTUC PO (xlsx or PDF) and how it arrives (email
+  attachment? supplier portal? EDI?). Does it state unit cost?
+- **Q-SOR-4.** Does NTUC require a delivery order / packing list in a
+  specific format? Sample please.
+- **Q-SOR-5.** How are NTUC returns handled today — credit note per return,
+  or netted?
+
+---
+
 ## 2. The Customer Profile — the thing you "teach"
 
 This is the heart of the system. One YAML/JSON record per customer, version
@@ -346,8 +446,9 @@ The general principle, worth stating plainly:
 
 ### 6.2 The three styles
 
-**`itemised`** — COURTS (recommended, changed from current practice), NTUC,
-Ideal Parts, Horme:
+**`itemised`** — COURTS consignment (recommended, changed from current
+practice); and the *default* for every **SOR** invoice (NTUC, Ideal Parts, Horme —
+see §1a):
 - one Xero line per resolved SKU, transactions aggregated by SKU
   (159 COURTS rows → ~9 lines per store)
 - `item_code` populated → your Xero inventory reports keep working
@@ -737,8 +838,9 @@ That is a short list, and it is the whole critical path to a working pilot.
 | **4** | Onboard remaining customers; AI-assisted onboarding wizard; **PDF intake + Bills (Yue Hwa)** | All 8+ chains live | 2–3 wk |
 | **5** | Credit notes, variance dashboards, email intake | Full monthly close in the app | 2–3 wk |
 
-**~9–13 weeks to full coverage; ~4 weeks to COURTS running live in draft
-mode.** Phases 0–2 are the risky part and they are front-loaded deliberately —
+**~11–16 weeks to full coverage across both models; ~4 weeks to COURTS
+(consignment) running live in draft mode; NTUC (SOR) follows once Q-SOR-2/3/4
+are answered.** Phases 0–2 are the risky part and they are front-loaded deliberately —
 if the GST engine can't reproduce your existing invoices exactly, we find out
 in week 1, not week 9.
 
@@ -748,7 +850,7 @@ over per customer, only after a clean month.
 
 ---
 
-## 11a. Requested: a Commission & Terms tab
+## 11a. Requested: a Commission & Terms tab (now: Customer Terms)
 
 Brien asked for a place in the app to fill in commission rates rather than
 editing YAML. Agreed — this is the right shape:
@@ -761,6 +863,8 @@ editing YAML. Agreed — this is the right shape:
 - Editing a rate writes a new version of the customer profile and logs who
   changed it. The run for any period uses the rate effective for *that* period.
 - Same tab carries payment terms and invoice style, since they change together.
+- **And the mode** — consignment or SOR (§1a) — plus, for SOR customers, the
+  price source (master cost column vs PO-stated) and the delivery-order format.
 
 The YAML stays as the storage format underneath; the tab is a form over it.
 Builds in Phase 3 with the rest of the review UI.
