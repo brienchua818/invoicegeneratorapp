@@ -332,6 +332,82 @@ run-time stays deterministic.
 
 ---
 
+## File E — `A050__S119__CON_AUG26.pdf` (Prime Supermarket, consignment)
+
+**Shape:** 6-page **scanned** PDF (printed, hand-signed, scanned — no text
+layer). Two consignment reports back to back, one per vendor code:
+
+| Pages | Vendor code | Vendor name on report | Item category | Entity | Outlets | Grand total |
+|---|---|---|---|---|---|---|
+| 1–2 | **A050** | AUDREY GLOBAL PTE LTD (CONSIGNMENT) | 05050 | **AGPL** | BR16 | **$238.56** |
+| 3–5 | **S119** | SHELDON GLOBAL PTE LTD (CONSIGNMENT) | 05051 | **SGPL** | BR16, TP25 | **$649.46** |
+
+Each report = a **summary page** (Taxable Sales per outlet → Commission −30% →
+Total; then Grand Total; note: *"Please issue Tax Invoice for the Grand Total
+amount"*) followed by **detail pages** listing every item sold per outlet:
+`Item No` (`0505000064`…) · `Description` · `QTY` · `Net Sales` · `Disc.` ·
+`Gross Amount`. Page 6 is blank.
+
+### E1. Prime pre-splits by entity — and the brand rule still agrees
+
+Prime keeps a vendor account per legal entity, so the split that COURTS and
+Shell force us to compute (§B1, §D1) arrives pre-done. Brand routing yields the
+same answer (Kakudo/Table Matters lines under A050; HOUZE/Greenshield under
+S119), so **the rule does not change** — Prime is just the easy case of it.
+Two invoices, two Xero orgs, from one PDF.
+
+### E2. Commission is printed on the report: 30.00%
+
+Independent confirmation of the rate derived from Xero (F2) and the master's
+header. It is applied to **Net Sales after `Disc.`**: 730.15 × 30% = 219.05 ✓;
+340.80 × 30% = 102.24 ✓.
+
+### E3. "Net Sales" is GST-exclusive retail — provable from the file itself
+
+Every line's `Net Sales ÷ QTY × 1.09` lands on a shelf price:
+
+```
+HOUZE MATTE 13L drawer      9.08  × 1.09 =  9.90
+Stair climber trolley      36.61  × 1.09 = 39.90
+Anti-bacterial wipes        4.50  × 1.09 =  4.905 → 4.90
+TM 20cm non-stick pot      33.94  × 1.09 = 37.00
+```
+
+So `gst.columns.net_sales: exclusive`, and Proof 1 exists for Prime. Current
+Xero practice (SI26060095, July: 1,054.12 gross → −316.24 commission → 737.88
+net → GST 66.41) is consistent with that.
+
+### E4. Summary and detail reconcile — Proof 2 is available
+
+BR16 detail lines sum to $340.80 = the summary's Taxable Sales. TP25: lines sum
+to $730.15 = summary. Unlike Shell (§B3), Prime gives the app a customer total
+to check against.
+
+### E5. It is a scan, and half of it is upside-down
+
+Pages 2, 4 (the detail pages) are rotated 180°. No text layer anywhere. The
+app's PDF intake therefore needs **OCR with orientation detection** (Tesseract
+`--psm 0` OSD, or a cloud document API), and the *summary page* — not the OCR of
+the detail lines — should drive the invoice, with the detail used for Proof 2
+and for per-SKU analytics. OCR of digits must be validated by the reconciliation
+(E4), never trusted alone.
+
+### E6. Prime's item codes have no home in the master yet
+
+`0505000064`, `0505100039`… are Prime's article numbers (category prefix + seq).
+Master 4.0 has no `Prime SKU` column. Either one is added (consistent with how
+every other retailer is handled) or Prime stays summary-only with no SKU-level
+detail — which is what the current Xero invoice does.
+
+### E7. Invoice grain is HQ, with outlet detail
+
+Xero has one Prime contact (`Prime Supermarket (1996) PTE LTD`) and one invoice
+per entity per month (`Sales July 2026`, commission to `8-2006`). The report's
+outlet columns (BR16, TP25) belong as line-level detail or a reference note,
+not as separate invoices.
+
+---
+
 ## File D — the master price lists in Google Drive
 
 > **Superseded on the same day.** Brien then supplied the current master,
@@ -444,6 +520,10 @@ the alias simply points at the pack SKU.
 | D1: KD10998 is Table Matters | COURTS **does** split across entities (store 928 → AGPL). |
 | D2: no single current master | Product table = Drive master ∪ Xero Items, refreshed on schedule. |
 | D3: COURTS `Model` is a nickname 44% of the time | Alias key for COURTS is `Item No_`, not `Model`. ~15 aliases to confirm once. |
+| E1: Prime pre-splits by vendor code = entity | Brand rule unchanged; Prime is the easy case. |
+| E3/E4: Net Sales ex-GST, summary = detail | Prime has Proofs 1 **and** 2; commission 30% printed on the report. |
+| E5: scanned, rotated | PDF intake needs OCR + orientation detection; summary drives, detail verifies. |
+| E6: no `Prime SKU` column | Add one to the master, or keep Prime summary-only. |
 | D4: pack SKUs exist | `Pack of N` resolves to a pack SKU (`LS-9631*8`), not a multiplier. |
 | **Master 4.0** has per-customer SKU columns | **The alias table already exists** in the master; unresolved articles are fixed by filling a cell there. See `03-master-price-list.md`. |
 | Master 4.0 resolves 24 of 36 COURTS articles | 12 remain (KYRO ×3, POPCON, PORTASTOOL, KRUSTY, MOMO ×2, CM-20/28/38, two promo lines) — $390.24, 35% of the file. |

@@ -86,7 +86,7 @@ pipelines that share an engine — not one pipeline with a flag.
 | Companion documents | none | **Delivery order / packing list**, PO acknowledgement |
 | Returns | Netted in next statement (COURTS) or credit note | **Credit note** against the original invoice, later |
 | Xero contact grain | per outlet or HQ (profile) | per outlet (the PO's ship-to) |
-| Customers (to confirm, Q-SOR-1) | COURTS, Shell, Yue Hwa, Prime, Sheng Siong?, BHG?, Isetan? | **NTUC FairPrice**, NTUC Online?, Giant?, Cold Storage? |
+| Customers (confirmed by Brien, 2026-09-07) | **Everyone else** — COURTS, Shell, Yue Hwa, Prime, Giant, Cold Storage, Sheng Siong, Isetan, BHG … | **NTUC FairPrice only** |
 
 ### What the Xero data says about the SOR flow
 
@@ -105,8 +105,8 @@ Reading the 2026 invoices for NTUC NEX / JEM / Parkway / VivoCity:
   no PO number is exactly what the SOR pipeline must refuse to create.
 
 So the "itemised" style I had filed under consignment (§6.2) is really the SOR
-delivery invoice. Ideal Parts and Horme (PO-referenced: `PO-CH-26-102664`) are
-the same pattern — those are plain wholesale/SOR, not consignment.
+delivery invoice. Ideal Parts and Horme (PO-referenced: `PO-CH-26-102664`) look
+the same, but Brien's classification puts **only NTUC FairPrice** in SOR.
 
 ### The SOR pipeline
 
@@ -151,9 +151,9 @@ period), and the companion DO.
 
 ### Questions this raises (blocking for NTUC, not for COURTS)
 
-- **Q-SOR-1.** Classify every customer: consignment or SOR? My reading of the
-  data: COURTS, Shell, Yue Hwa, Prime = consignment; NTUC FairPrice, Ideal
-  Parts, Horme = SOR. Giant, Cold Storage, Sheng Siong, BHG, Isetan — unknown.
+- ~~Q-SOR-1~~ ✅ **Answered:** all customers are consignment **except NTUC
+  FairPrice**, which is SOR. (Ideal Parts and Horme are PO-referenced wholesale
+  and sit outside this app's scope unless Brien says otherwise.)
 - **Q-SOR-2.** Send both SOPs (consignment and SOR) — the written procedure
   your team follows today. The app should encode them, not reinvent them.
 - **Q-SOR-3.** A sample NTUC PO (xlsx or PDF) and how it arrives (email
@@ -739,8 +739,11 @@ they produced `profiles/courts.yaml` and `profiles/shell.yaml` plus every
 finding in `02-source-files.md`. That is exactly the loop; please repeat it for
 the rest.
 
-Still needed: Giant, Cold Storage, NTUC, Sheng Siong, Isetan, Yue Hwa, BHG —
-and **two more months each for COURTS and Shell**. One file tells me the layout;
+✅ **Also received: Prime (Aug 2026, scanned PDF, both entities in one file)**
+— see `02-source-files.md §E` and `profiles/prime.yaml`.
+
+Still needed: Giant, Cold Storage, NTUC (a **PO**, not a sales report), Sheng
+Siong, Isetan, BHG — and **two more months each for COURTS, Shell and Prime**. One file tells me the layout;
 three tell me what *varies* (new columns, months with returns, promo lines,
 outlet openings, the month someone merges cells). Raw and unedited — send the
 ugly ones especially.
@@ -772,7 +775,7 @@ Status from the evidence so far:
 - **Shell** — ✅ **30%**, confirmed by Brien. Recorded in `profiles/shell.yaml`
   with an effective date. Brien also asked for a **Commission & Terms tab** in the
   app where rates can be entered per customer — see §11a.
-- **Prime** — derived as 30% from your invoices; please confirm.
+- **Prime** — ✅ **30%**, printed on Prime's own consignment report (§E2).
 - Everyone else — needed.
 
 ### Tier 2 — needed before go-live

@@ -41,8 +41,8 @@ session must not re-derive.
   idempotency = (entity, customer, PO no.); delivery order accompanies goods;
   returns come back as credit notes. **NTUC FairPrice is SOR, not consignment**
   (Brien, 2026-09-07). Ideal Parts and Horme are PO-referenced too.
-- Each profile carries `mode: consignment | sor`. Customers not yet classified:
-  Giant, Cold Storage, Sheng Siong, BHG, Isetan (plan §1a Q-SOR-1).
+- Each profile carries `mode: consignment | sor`. **Classification (Brien,
+  2026-09-07): every customer is consignment except NTUC FairPrice.**
 - `NTUC COST` in the master is empty — SOR pricing for NTUC is unresolved.
 
 ## Commission and terms (confirmed)
@@ -50,7 +50,9 @@ session must not re-derive.
   is authoritative — bill it, verify the implied rate.
 - Shell stations: 30% (Brien, 2026-09-06), on retail ex-GST. Invoice the dealer
   company per station, matched on the `\d{3}_\d{2}` site code in the contact name.
-- Prime Supermarket: 30% (derived from Xero). BHG / Sheng Siong: 35%,
+- Prime Supermarket: 30%, printed on Prime's consignment report; vendor codes
+  A050 = AGPL, S119 = SGPL; report is a scanned PDF (OCR + rotation needed);
+  Net Sales are GST-exclusive; invoice per entity at HQ level, commission to 8-2006. BHG / Sheng Siong: 35%,
   Gain City 36%, RedMart 25% (from master headers). Rates live in the profile
   with effective dates; the app will expose them in a Commission & Terms tab.
 - Yue Hwa sends PDFs and bills *us* a 5% loyalty recharge (+GST) → a Xero
